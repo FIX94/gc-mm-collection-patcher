@@ -66,7 +66,7 @@ all:
 	@echo "  COMPILE   mem.o"
 	$(Q)$(CC) $(CFLAGS) -c mem.c -o mem.o
 	@echo "  LINK      emu.elf"
-	$(Q)$(LD) start.o loader.o apu.o cpu.o ppu.o input.o mem.o -T emu.ld -o emu.elf
+	$(Q)$(LD) start.o main.o apu.o cpu.o ppu.o input.o mem.o -T emu.ld -o emu.elf
 	@echo "  OBJCOPY   emu_decmp.bin"
 	$(Q)$(OBJCOPY) -Obinary -j .code emu.elf emu_decmp.bin
 	@echo "  CMPBIN    emu_cmp.bin"
