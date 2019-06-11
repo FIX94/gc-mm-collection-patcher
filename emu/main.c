@@ -43,8 +43,8 @@ extern u32 module_uninit_exit_addr;
 extern u32 packfile_transfer_exit_addr;
 void _main(int module, u32 aram_addr)
 {
-	//only MM2 is set up right now
-	if(module == 1)
+	//only MM1/MM2 are set up right now
+	if(module == 0 || module == 1)
 	{
 		//copy over current module id
 		cur_module = module;
@@ -143,11 +143,31 @@ typedef struct _ax_voice_array {
 extern u32 *game_loaded_module;
 extern ax_voice_array game_ax_voice_array[];
 //from start.S
+extern u32 _our_play_addr;
 extern u32 _ori_play_endaddr;
-extern void _our_play();
+extern void _our_play_prep();
+//our hooks
+void _mm_playandexit(u32 val);
+void _mm2_playandexit(u32 val);
 static void _module_init_hook()
 {
-	if(cur_module == 1)
+	if(cur_module == 0)
+	{
+		//MM1 softpatches
+		u8 *relentry1 = (u8*)game_loaded_module[4];
+		//swap turbo A and B
+		relentry1[0x64AF7] = 0x40;
+		relentry1[0x64B13] = 0x40;
+		//actually do audio processing internally
+		_our_play_addr = (u32)_mm_playandexit;
+		PatchB((u32)_our_play_prep, (u32)relentry1+0x63B68);
+		_ori_play_endaddr = (u32)relentry1+0x63B68+0x334;
+		u8 *relentry2 = (u8*)game_loaded_module[0xD];
+		//swap A and B
+		relentry2[0xD89E] = 2;
+		relentry2[0xD89F] = 1;
+	}
+	else if(cur_module == 1)
 	{
 		//MM2 softpatches
 		u8 *relentry1 = (u8*)game_loaded_module[4];
@@ -155,18 +175,15 @@ static void _module_init_hook()
 		relentry1[0x10753B] = 0x40;
 		relentry1[0x107557] = 0x40;
 		//actually do audio processing internally
-		PatchB((u32)_our_play, (u32)relentry1+0xF709C);
+		_our_play_addr = (u32)_mm2_playandexit;
+		PatchB((u32)_our_play_prep, (u32)relentry1+0xF709C);
 		_ori_play_endaddr = (u32)relentry1+0xF709C+0x348;
 		u8 *relentry2 = (u8*)game_loaded_module[0xD];
 		//swap A and B
 		relentry2[0xD89E] = 2;
 		relentry2[0xD89F] = 1;
 		//allow A in weapon menu
-		relentry2[0x36E0D] = 0xF;
-		//fix ending playing the wrong song,
-		//plays 2nd part twice instead of
-		//main theme first and then 2nd part
-		relentry2[0x37060] = 0x11;
+		relentry2[0x36E0D] = 0xD;
 	}
 	//grab voice to use
 	if(!used_nes_voice)
@@ -268,19 +285,42 @@ static uint8_t bin2Get(uint16_t addr)
 }
 extern uint16_t game_amp_val;
 uint8_t curAmpVal = 0;
+uint16_t game_driver_start = 0, game_driver_end = 0;
 void _mm_packfile_transfer_hook(int id, u8 *address)
 {
-	//MM2 pack loaded that contains NES rom
-	if(cur_module == 1 && id == 0x13)
+	bool got_nes_rom = false;
+	//MM1 pack loaded that contains NES rom
+	if(cur_module == 0 && id == 0x11)
 	{
+		got_nes_rom = true;
+		//bank 4 10024
+		game_driver_addr_p1 = address+0x10024;
+		//bank 7 1C024
+		game_driver_addr_p2 = address+0x1C024;
+		//entry at bank 7+0x1551 (D551)
+		game_driver_start = 0xD551;
+		//force end at bank 7+0x156E (D56E)
+		//and add one instruction below BLE to not false end early
+		game_driver_end = 0xD570;
+	} //MM2 pack loaded that contains NES rom
+	else if(cur_module == 1 && id == 0x13)
+	{
+		got_nes_rom = true;
+		//30044 bank C
 		game_driver_addr_p1 = address+0x30044;
 		//remove door open/close loop in sound driver,
 		//because the game does not properly stop it
 		game_driver_addr_p1[0x3DB2] = 6;
 		//3C044 bank F
-		//entry at bank F+0x10A7 (D0A7)
-		//force end at bank F+0x10BE (D0BE)
 		game_driver_addr_p2 = address+0x3C044;
+		//entry at bank F+0x10A7 (D0A7)
+		game_driver_start = 0xD0A7;
+		//force end at bank F+0x10BE (D0BE)
+		//and add one instruction below BLE to not false end early
+		game_driver_end = 0xD0C0;
+	}
+	if(got_nes_rom)
+	{
 		//use music volume for driver general volume
 		uint16_t tmpval = game_amp_val>>1;
 		curAmpVal = tmpval > 0x7F ? 0x7F : tmpval;
@@ -304,9 +344,28 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		running = 1;
 	}
 }
-//code is like internal MM2 play routine
+int os_disable_interrupts();
+int os_restore_interrupts(int t);
+//code is like internal MM1 play routine
 void _mm_playandexit(u32 val)
 {
+	int t = os_disable_interrupts();
+	u8 used = memGet8(0x45);
+	if(used < 0x10)
+	{
+		//out of all things to change, its the hurt sound,
+		//now being an ID thats not in the original NES driver,
+		//so I guess as dumb as it is, we have to redirect it...
+		if(val == 0x33) val = 0x16;
+		memSet8(0x580+used,val);
+		memSet8(0x45,used+1);
+	}
+	os_restore_interrupts(t);
+}
+//code is like internal MM2 play routine
+void _mm2_playandexit(u32 val)
+{
+	int t = os_disable_interrupts();
 	u8 used = memGet8(0x66);
 	if(used < 0x10)
 	{
@@ -317,4 +376,5 @@ void _mm_playandexit(u32 val)
 		memSet8(0x580+used,val);
 		memSet8(0x66,used+1);
 	}
+	os_restore_interrupts(t);
 }

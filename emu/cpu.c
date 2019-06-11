@@ -59,7 +59,7 @@ static struct {
 } cpu;
 
 static void cpuSetStartArray();
-
+extern uint16_t game_driver_start, game_driver_end;
 void cpuInit()
 {
 	cpuSetStartArray();
@@ -72,7 +72,7 @@ void cpuInit()
 	cpu.absAddr = 0;
 	//cpu.pc = 0;
 	//cpu.pc_nsf_bak = 0;
-	cpu.pc = 0xD0A7; //play hack
+	cpu.pc = game_driver_start; //play hack
 	cpu.indVal = 0;
 	cpu.p = 0;
 	cpu.p_nsf_bak = 0;
@@ -982,11 +982,11 @@ void cpuActivate() { cpu.active = true; }
 /* Main CPU Interpreter */
 FIXNES_ALWAYSINLINE bool cpuCycle()
 {
-	//specific to MM2 audio playback
+	//specific to MM1/MM2 audio playback
 	if(!cpu.active) return true;
-	else if(cpu.pc == 0xD0BE)
+	else if(cpu.pc == game_driver_end)
 	{
-		cpu.pc = 0xD0A7;
+		cpu.pc = game_driver_start;
 		cpu.active = false;
 		return true;
 	}

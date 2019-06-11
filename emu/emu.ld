@@ -19,6 +19,9 @@ SECTIONS {
 
 	mix_init_channel = 0x8007F7EC;
 
+	os_disable_interrupts = 0x8005DD04;
+	os_restore_interrupts = 0x8005DD2C;
+
 	os_report = 0x8005A110;
 	os_create_thread = 0x80062394;
 	os_resume_thread = 0x800629FC;

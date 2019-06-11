@@ -26,10 +26,17 @@ _packfile_transfer_prep:
 _ori_play_endaddr:
 	.long 0
 
-.global _our_play
-_our_play:
+.global _our_play_addr
+_our_play_addr:
+	.long 0
+
+.global _our_play_prep
+_our_play_prep:
 	lbz 3, 1(3)
 	lis 4, _ori_play_endaddr@ha
 	lwz 4, _ori_play_endaddr@l(4)
 	mtlr 4
-	b _mm_playandexit
+	lis 4, _our_play_addr@ha
+	lwz 4, _our_play_addr@l(4)
+	mtctr 4
+	bctr
