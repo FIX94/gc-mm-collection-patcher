@@ -43,21 +43,17 @@ extern u32 module_uninit_exit_addr;
 extern u32 packfile_transfer_exit_addr;
 void _main(int module, u32 aram_addr)
 {
-	//only MM1/MM2 are set up right now
-	if(module == 0 || module == 1)
-	{
-		//copy over current module id
-		cur_module = module;
-		//copy over main aram address to use
-		used_aram_addr = aram_addr;
-		used_aram_addr_cur = aram_addr;
-		used_aram_addr_prev = aram_addr+0x280;
-		used_aram_addr_end = aram_addr+0x4FF;
-		// set up module patches
-		PatchB((u32)_module_init_hook, (u32)&module_init_exit_addr);
-		PatchB((u32)_module_uninit_hook, (u32)&module_uninit_exit_addr);
-		PatchB((u32)_packfile_transfer_prep, (u32)&packfile_transfer_exit_addr);
-	}
+	//copy over current module id
+	cur_module = module;
+	//copy over main aram address to use
+	used_aram_addr = aram_addr;
+	used_aram_addr_cur = aram_addr;
+	used_aram_addr_prev = aram_addr+0x280;
+	used_aram_addr_end = aram_addr+0x4FF;
+	// set up module patches
+	PatchB((u32)_module_init_hook, (u32)&module_init_exit_addr);
+	PatchB((u32)_module_uninit_hook, (u32)&module_uninit_exit_addr);
+	PatchB((u32)_packfile_transfer_prep, (u32)&packfile_transfer_exit_addr);
 }
 
 
@@ -149,42 +145,70 @@ extern void _our_play_prep();
 //our hooks
 void _mm_playandexit(u32 val);
 void _mm2_playandexit(u32 val);
+void _mm3_playandexit(u32 val);
 static void _module_init_hook()
 {
+	//relentry1 start 80572CCC
+	u8 *relentry1 = (u8*)game_loaded_module[4];
+	//swap turbo A and B
+	//seemingly used in both MM1 and MM3
+	relentry1[0x64AF7] = 0x40; relentry1[0x64B13] = 0x40;
+	//seemingly used in MM2
+	relentry1[0x10753B] = 0x40; relentry1[0x107557] = 0x40;
+	//unused? I assume originally for MM3
+	relentry1[0x1F4C1B] = 0x40; relentry1[0x1F4C37] = 0x40;
+	//seemingly used in MM4
+	relentry1[0x2D60B3] = 0x40; relentry1[0x2D60DB] = 0x40;
+	//seemingly used in MM5
+	relentry1[0x39802F] = 0x40; relentry1[0x398057] = 0x40;
+	//seemingly used in MM6
+	relentry1[0x47F507] = 0x40; relentry1[0x47F52F] = 0x40;
+	//swap slide A and B
+	//unused? I assume originally for MM3
+	relentry1[0x1F4C5F] = 0x80;
+	//seemingly used in MM4
+	relentry1[0x2D60FF] = 0x80;
+	//seemingly used in MM5
+	relentry1[0x3980B7] = 0x80; relentry1[0x3980CB] = 0x80;
+	//seemingly used in MM6
+	relentry1[0x47F543] = 0x80;
+	//MM1-MM6 swap A and B
+	u8 *relentry2 = (u8*)game_loaded_module[0xD];
+	relentry2[0xD89E] = 2; relentry2[0xD89F] = 1;
+	//extra patch required for MM2 to allow A
+	//in weapon menu after swapping A and B
+	relentry2[0x36E0D] = 0xD;
+	//actually do audio processing internally
 	if(cur_module == 0)
 	{
-		//MM1 softpatches
-		u8 *relentry1 = (u8*)game_loaded_module[4];
-		//swap turbo A and B
-		relentry1[0x64AF7] = 0x40;
-		relentry1[0x64B13] = 0x40;
-		//actually do audio processing internally
 		_our_play_addr = (u32)_mm_playandexit;
 		PatchB((u32)_our_play_prep, (u32)relentry1+0x63B68);
 		_ori_play_endaddr = (u32)relentry1+0x63B68+0x334;
-		u8 *relentry2 = (u8*)game_loaded_module[0xD];
-		//swap A and B
-		relentry2[0xD89E] = 2;
-		relentry2[0xD89F] = 1;
 	}
 	else if(cur_module == 1)
 	{
-		//MM2 softpatches
-		u8 *relentry1 = (u8*)game_loaded_module[4];
-		//swap turbo button from A to B
-		relentry1[0x10753B] = 0x40;
-		relentry1[0x107557] = 0x40;
-		//actually do audio processing internally
 		_our_play_addr = (u32)_mm2_playandexit;
 		PatchB((u32)_our_play_prep, (u32)relentry1+0xF709C);
 		_ori_play_endaddr = (u32)relentry1+0xF709C+0x348;
-		u8 *relentry2 = (u8*)game_loaded_module[0xD];
-		//swap A and B
-		relentry2[0xD89E] = 2;
-		relentry2[0xD89F] = 1;
-		//allow A in weapon menu
-		relentry2[0x36E0D] = 0xD;
 	}
+	else if(cur_module == 2)
+	{
+		_our_play_addr = (u32)_mm3_playandexit;
+		PatchB((u32)_our_play_prep, (u32)relentry1+0x1F21C4);
+		_ori_play_endaddr = (u32)relentry1+0x1F21C4+0x354;
+	}
+	else
+		return;
+	/* todo
+	else if(cur_module == 3)
+	{
+	}
+	else if(cur_module == 4)
+	{
+	}
+	else if(cur_module == 5)
+	{
+	} */
 	//grab voice to use
 	if(!used_nes_voice)
 		used_nes_voice = ax_acquire_voice(31,(void*)0,0);
@@ -283,6 +307,16 @@ static uint8_t bin2Get(uint16_t addr)
 {
 	return game_driver_addr_p2[addr&0x3FFF];
 }
+
+static uint8_t bin1Get_mm3(uint16_t addr)
+{
+	return game_driver_addr_p1[addr&0x7FFF];
+}
+static uint8_t bin2Get_mm3(uint16_t addr)
+{
+	return game_driver_addr_p2[addr&0x1FFF];
+}
+
 extern uint16_t game_amp_val;
 uint8_t curAmpVal = 0;
 uint16_t game_driver_start = 0, game_driver_end = 0;
@@ -319,6 +353,22 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		//and add one instruction below BLE to not false end early
 		game_driver_end = 0xD0C0;
 	}
+	else if(cur_module == 2 && id == 0x13)
+	{
+		got_nes_rom = true;
+		//2C084 bank 16
+		game_driver_addr_p1 = address+0x2C084;
+		//patch out bank switching code, we have that
+		//bank hardcoded into the right spot already
+		game_driver_addr_p1[0x3E] = 0xEA; game_driver_addr_p1[0x3F] = 0xEA;
+		game_driver_addr_p1[0x40] = 0xEA; game_driver_addr_p1[0x41] = 0xEA;
+		//3E084 bank 1F
+		game_driver_addr_p2 = address+0x3E084;
+		//entry at bank 1F+0x1FA8 (FFA8)
+		game_driver_start = 0xFFA8;
+		//force end at bank 1F+0x1FC5 (FFC5)
+		game_driver_end = 0xFFC5;
+	}
 	if(got_nes_rom)
 	{
 		//use music volume for driver general volume
@@ -333,10 +383,20 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		inputInit();
 		memInitGetSetPointers(); //pre-set get8/set8
 		uint32_t addr;
-		for(addr = 0x8000; addr < 0xC000; addr++)
-			memInitMapperGetPointer(addr, bin1Get);
-		for(addr = 0xC000; addr < 0x10000; addr++)
-			memInitMapperGetPointer(addr, bin2Get);
+		if(cur_module == 0 || cur_module == 1)
+		{
+			for(addr = 0x8000; addr < 0xC000; addr++)
+				memInitMapperGetPointer(addr, bin1Get);
+			for(addr = 0xC000; addr < 0x10000; addr++)
+				memInitMapperGetPointer(addr, bin2Get);
+		}
+		else
+		{
+			for(addr = 0x8000; addr < 0xE000; addr++)
+				memInitMapperGetPointer(addr, bin1Get_mm3);
+			for(addr = 0xE000; addr < 0x10000; addr++)
+				memInitMapperGetPointer(addr, bin2Get_mm3);
+		}
 		//create emu thread
 		our_thread = bink_mmu_malloc(0x400);
 		thread_stack = bink_mmu_malloc(0x800);
@@ -375,6 +435,22 @@ void _mm2_playandexit(u32 val)
 		if(val == 0x18) val = 0xD;
 		memSet8(0x580+used,val);
 		memSet8(0x66,used+1);
+	}
+	os_restore_interrupts(t);
+}
+//code is like internal MM3 play routine
+void _mm3_playandexit(u32 val)
+{
+	int t = os_disable_interrupts();
+	//pieces of music always get stored here
+	if(val <= 0x12)
+		memSet8(0xD9, val);
+	u8 curslot = memGet8(0xDA);
+	u8 slotval = memGet8(0xDC+curslot);
+	if(slotval == 0x88)
+	{
+		memSet8(0xDC+curslot,val);
+		memSet8(0xDA,(curslot+1)&7);
 	}
 	os_restore_interrupts(t);
 }

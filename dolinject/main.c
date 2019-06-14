@@ -36,7 +36,7 @@ void waitforexit()
 
 int main(int argc, char *argv[])
 {
-	printf("Mega Man Anniversary Collection NES Audio DOL Patcher v0.2 by FIX94\n");
+	printf("Mega Man Anniversary Collection NES Audio DOL Patcher v0.3 by FIX94\n");
 	if(decmp_size > 0x2080)
 	{
 		printf("Internal executable check 1 failed! decmp_size is %i bytes!\n", decmp_size);
