@@ -1,6 +1,6 @@
 # About this Project  
 I created this to improve on control and audio issues found in the NES Ports of Mega Man 1 to 6 in the GameCube Mega Man Anniversary Collection.  
-As of right now it only applies to Mega Man 1 and Mega Man 2 and inverts the A and B buttons to fix its controls and also completely replaces how audio is played back.  
+As of right now the audio patches that completely replace how audio is played back apply to Mega Man 1-3 and the control patches that invert the A and B buttons to fix its controls apply to all included NES titles (Mega Man 1-6).  
 Now instead of playing through low quality recordings, I instead added a stripped down version of my NES emulator to play it back exactly as the original.  
 This also corrects audio issues such as files not looping/looping incorrectly and straight up wrong songs being played at times.    
 
