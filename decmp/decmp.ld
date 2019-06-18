@@ -27,6 +27,16 @@ SECTIONS {
 
 	gc_aram_malloc = 0x8003BCF0;
 
+	game_controller_update = 0x8002EC24;
+
+	gc_entry_playlogos = 0x8003DCC0;
+
+	frontend_init_play_fmv_addr = 0x8000D5E0;
+	frontend_init_skip_fmv_addr = 0x8000D600;
+
+	/* game variables we use */
+	input_start_held = 0x8010AEA7;
+
 	/* location of compressed emu */
 	emu_cmp = 0x800CB358;
 

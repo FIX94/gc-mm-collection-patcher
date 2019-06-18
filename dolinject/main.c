@@ -15,8 +15,10 @@
 static const uint8_t magic[8] = { 0x00, 0x00, 0x00, 0x00, 0xC2, 0x33, 0x9F, 0x3D };
 static const uint8_t dolcheck1[8] = { 0x38, 0x00, 0x00, 0x01, 0x98, 0x0D, 0x81, 0x81 };
 static const uint8_t dolcheck2[8] = { 0x83, 0xEB, 0xFF, 0xFC, 0x7D, 0x61, 0x5B, 0x78 };
+static const uint8_t dolcheck3[8] = { 0x38, 0x00, 0x00, 0xC4, 0xB0, 0x0B, 0x00, 0x04 };
 static const uint32_t dolpatchoffset1 = 0x111EC;
 static const uint32_t dolpatchoffset2 = 0x38CC8;
+static const uint32_t dolpatchoffset3 = 0xA5DC;
 static const uint8_t arraycheck[8] = { 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x79, 0x46 };
 static const uint32_t arraydstoffset = 0xB9220;
 static const uint32_t arraysrcoffset = 0xBA260;
@@ -36,7 +38,7 @@ void waitforexit()
 
 int main(int argc, char *argv[])
 {
-	printf("Mega Man Anniversary Collection NES Audio DOL Patcher v0.3 by FIX94\n");
+	printf("Mega Man Anniversary Collection NES Audio DOL Patcher v0.4 by FIX94\n");
 	if(decmp_size > 0x2080)
 	{
 		printf("Internal executable check 1 failed! decmp_size is %i bytes!\n", decmp_size);
@@ -99,6 +101,16 @@ int main(int argc, char *argv[])
 		return -6;
 	}
 
+	fseek(f, offset+dolpatchoffset3-8, SEEK_SET);
+	fread(checkbuf, 1, 8, f);
+	if(memcmp(checkbuf, dolcheck3, 8) != 0)
+	{
+		printf("ERROR: Sanity check 3 failed! DOL Unexpected\n");
+		fclose(f);
+		waitforexit();
+		return -7;
+	}
+
 	bool array_needs_moving = false;
 	printf("sanity checking decompressor space\n");
 
@@ -115,7 +127,7 @@ int main(int argc, char *argv[])
 			printf("ERROR: Source array not found! DOL Unexpected!\n");
 			fclose(f);
 			waitforexit();
-			return -7;
+			return -8;
 		}
 	}
 	else
@@ -129,7 +141,7 @@ int main(int argc, char *argv[])
 		printf("ERROR Unable to read end of DOL File!\n");
 		fclose(f);
 		waitforexit();
-		return -8;
+		return -9;
 	}
 
 	printf("OK so far, reading in whole DOL file and patching it\n");
@@ -140,7 +152,7 @@ int main(int argc, char *argv[])
 		printf("ERROR: Unable to allocate space for DOL!\n");
 		fclose(f);
 		waitforexit();
-		return -9;
+		return -10;
 	}
 	fread(buf, 1, dollen, f);
 
@@ -155,6 +167,12 @@ int main(int argc, char *argv[])
 	buf[dolpatchoffset2+1] = 0x08;
 	buf[dolpatchoffset2+2] = 0x15;
 	buf[dolpatchoffset2+3] = 0x5C;
+
+	//patch address jump 3
+	buf[dolpatchoffset3+0] = 0x48;
+	buf[dolpatchoffset3+1] = 0x0A;
+	buf[dolpatchoffset3+2] = 0xFC;
+	buf[dolpatchoffset3+3] = 0x4C;
 
 	if(array_needs_moving)
 	{

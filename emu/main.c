@@ -145,7 +145,7 @@ extern void _our_play_prep();
 //our hooks
 void _mm_playandexit(u32 val);
 void _mm2_playandexit(u32 val);
-void _mm3_playandexit(u32 val);
+void _mm3_mm4_playandexit(u32 val);
 static void _module_init_hook()
 {
 	//relentry1 start 80572CCC
@@ -193,16 +193,19 @@ static void _module_init_hook()
 	}
 	else if(cur_module == 2)
 	{
-		_our_play_addr = (u32)_mm3_playandexit;
+		_our_play_addr = (u32)_mm3_mm4_playandexit;
 		PatchB((u32)_our_play_prep, (u32)relentry1+0x1F21C4);
 		_ori_play_endaddr = (u32)relentry1+0x1F21C4+0x354;
+	}
+	else if(cur_module == 3)
+	{
+		_our_play_addr = (u32)_mm3_mm4_playandexit;
+		PatchB((u32)_our_play_prep, (u32)relentry1+0x2D2B60);
+		_ori_play_endaddr = (u32)relentry1+0x2D2B60+0x458;
 	}
 	else
 		return;
 	/* todo
-	else if(cur_module == 3)
-	{
-	}
 	else if(cur_module == 4)
 	{
 	}
@@ -256,8 +259,10 @@ static void _module_init_hook()
 }
 
 static u8 *thread_stack = (u8*)0;
-static u8 *game_driver_addr_p1 = (u8*)0; //bank C
-static u8 *game_driver_addr_p2 = (u8*)0; //bank F
+static u8 *game_driver_addr_p1 = (u8*)0; //16/8k bank 0
+static u8 *game_driver_addr_p2 = (u8*)0; //16/8k bank 1
+static u8 *game_driver_addr_p3 = (u8*)0; //8k bank 2
+static u8 *game_driver_addr_p4 = (u8*)0; //8k bank 3
 
 static void _module_uninit_hook()
 {
@@ -292,6 +297,8 @@ static void _module_uninit_hook()
 	memDeinitBufs();
 	game_driver_addr_p1 = (void*)0;
 	game_driver_addr_p2 = (void*)0;
+	game_driver_addr_p3 = (void*)0;
+	game_driver_addr_p4 = (void*)0;
 	//revert module hooks
 	PatchBLR((u32)&module_init_exit_addr); //revert module init
 	PatchBLR((u32)&module_uninit_exit_addr); //revert module uninit
@@ -299,22 +306,30 @@ static void _module_uninit_hook()
 	//reset current module id
 	cur_module = -1;
 }
-static uint8_t bin1Get(uint16_t addr)
+static uint8_t bin1Get_16k(uint16_t addr)
 {
 	return game_driver_addr_p1[addr&0x3FFF];
 }
-static uint8_t bin2Get(uint16_t addr)
+static uint8_t bin2Get_16k(uint16_t addr)
 {
 	return game_driver_addr_p2[addr&0x3FFF];
 }
 
-static uint8_t bin1Get_mm3(uint16_t addr)
+static uint8_t bin1Get_8k(uint16_t addr)
 {
-	return game_driver_addr_p1[addr&0x7FFF];
+	return game_driver_addr_p1[addr&0x1FFF];
 }
-static uint8_t bin2Get_mm3(uint16_t addr)
+static uint8_t bin2Get_8k(uint16_t addr)
 {
 	return game_driver_addr_p2[addr&0x1FFF];
+}
+static uint8_t bin3Get_8k(uint16_t addr)
+{
+	return game_driver_addr_p3[addr&0x1FFF];
+}
+static uint8_t bin4Get_8k(uint16_t addr)
+{
+	return game_driver_addr_p4[addr&0x1FFF];
 }
 
 extern uint16_t game_amp_val;
@@ -323,14 +338,16 @@ uint16_t game_driver_start = 0, game_driver_end = 0;
 void _mm_packfile_transfer_hook(int id, u8 *address)
 {
 	bool got_nes_rom = false;
+	int nes_hdr_len = 0;
 	//MM1 pack loaded that contains NES rom
 	if(cur_module == 0 && id == 0x11)
 	{
 		got_nes_rom = true;
-		//bank 4 10024
-		game_driver_addr_p1 = address+0x10024;
-		//bank 7 1C024
-		game_driver_addr_p2 = address+0x1C024;
+		nes_hdr_len = 0x24;
+		//music bank 4
+		game_driver_addr_p1 = address+(4<<14)+nes_hdr_len;
+		//static bank 7
+		game_driver_addr_p2 = address+(7<<14)+nes_hdr_len;
 		//entry at bank 7+0x1551 (D551)
 		game_driver_start = 0xD551;
 		//force end at bank 7+0x156E (D56E)
@@ -340,34 +357,57 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 	else if(cur_module == 1 && id == 0x13)
 	{
 		got_nes_rom = true;
-		//30044 bank C
-		game_driver_addr_p1 = address+0x30044;
+		nes_hdr_len = 0x44;
+		//music bank C
+		game_driver_addr_p1 = address+(0xC<<14)+nes_hdr_len;
 		//remove door open/close loop in sound driver,
 		//because the game does not properly stop it
 		game_driver_addr_p1[0x3DB2] = 6;
-		//3C044 bank F
-		game_driver_addr_p2 = address+0x3C044;
+		//static bank F
+		game_driver_addr_p2 = address+(0xF<<14)+nes_hdr_len;
 		//entry at bank F+0x10A7 (D0A7)
 		game_driver_start = 0xD0A7;
 		//force end at bank F+0x10BE (D0BE)
 		//and add one instruction below BLE to not false end early
 		game_driver_end = 0xD0C0;
-	}
+	} //MM3 pack loaded that contains NES rom
 	else if(cur_module == 2 && id == 0x13)
 	{
 		got_nes_rom = true;
-		//2C084 bank 16
-		game_driver_addr_p1 = address+0x2C084;
+		nes_hdr_len = 0x84;
+		//music banks 16, 17 and 18
+		game_driver_addr_p1 = address+(0x16<<13)+nes_hdr_len;
+		game_driver_addr_p2 = address+(0x17<<13)+nes_hdr_len;
+		game_driver_addr_p3 = address+(0x18<<13)+nes_hdr_len;
 		//patch out bank switching code, we have that
 		//bank hardcoded into the right spot already
 		game_driver_addr_p1[0x3E] = 0xEA; game_driver_addr_p1[0x3F] = 0xEA;
 		game_driver_addr_p1[0x40] = 0xEA; game_driver_addr_p1[0x41] = 0xEA;
-		//3E084 bank 1F
-		game_driver_addr_p2 = address+0x3E084;
+		//static bank 1F
+		game_driver_addr_p4 = address+0x3E084;
 		//entry at bank 1F+0x1FA8 (FFA8)
 		game_driver_start = 0xFFA8;
 		//force end at bank 1F+0x1FC5 (FFC5)
 		game_driver_end = 0xFFC5;
+	} //MM4 pack loaded that contains NES rom
+	else if(cur_module == 3 && id == 0x16)
+	{
+		got_nes_rom = true;
+		nes_hdr_len = 0x104;
+		//music banks 1E, 1F and 1D (not sequential for some reason)
+		game_driver_addr_p1 = address+(0x1E<<13)+nes_hdr_len;
+		game_driver_addr_p2 = address+(0x1F<<13)+nes_hdr_len;
+		game_driver_addr_p3 = address+(0x1D<<13)+nes_hdr_len;
+		//patch out bank switching code, we have that
+		//bank hardcoded into the right spot already
+		game_driver_addr_p1[0x3E] = 0xEA; game_driver_addr_p1[0x3F] = 0xEA;
+		game_driver_addr_p1[0x40] = 0xEA; game_driver_addr_p1[0x41] = 0xEA;
+		//static bank 3F
+		game_driver_addr_p4 = address+(0x3F<<13)+nes_hdr_len;
+		//entry at bank 3F+0x1F78 (FF78)
+		game_driver_start = 0xFF78;
+		//force end at bank 3F+0x1F9F (FF9F)
+		game_driver_end = 0xFF9F;
 	}
 	if(got_nes_rom)
 	{
@@ -386,16 +426,23 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		if(cur_module == 0 || cur_module == 1)
 		{
 			for(addr = 0x8000; addr < 0xC000; addr++)
-				memInitMapperGetPointer(addr, bin1Get);
+				memInitMapperGetPointer(addr, bin1Get_16k);
 			for(addr = 0xC000; addr < 0x10000; addr++)
-				memInitMapperGetPointer(addr, bin2Get);
+				memInitMapperGetPointer(addr, bin2Get_16k);
 		}
-		else
+		else //MM3/MM4
 		{
-			for(addr = 0x8000; addr < 0xE000; addr++)
-				memInitMapperGetPointer(addr, bin1Get_mm3);
+			for(addr = 0x8000; addr < 0xA000; addr++)
+				memInitMapperGetPointer(addr, bin1Get_8k);
+			for(addr = 0xA000; addr < 0xC000; addr++)
+				memInitMapperGetPointer(addr, bin2Get_8k);
+			for(addr = 0xC000; addr < 0xE000; addr++)
+				memInitMapperGetPointer(addr, bin3Get_8k);
 			for(addr = 0xE000; addr < 0x10000; addr++)
-				memInitMapperGetPointer(addr, bin2Get_mm3);
+				memInitMapperGetPointer(addr, bin4Get_8k);
+			//make sure to mute driver before game starts
+			for(addr = 0xDC; addr < 0xE4; addr++)
+				memSet8(addr, 0x88);
 		}
 		//create emu thread
 		our_thread = bink_mmu_malloc(0x400);
@@ -438,13 +485,15 @@ void _mm2_playandexit(u32 val)
 	}
 	os_restore_interrupts(t);
 }
-//code is like internal MM3 play routine
-void _mm3_playandexit(u32 val)
+//code is like internal MM3/MM4 play routine
+void _mm3_mm4_playandexit(u32 val)
 {
 	int t = os_disable_interrupts();
 	//pieces of music always get stored here
-	if(val <= 0x12)
-		memSet8(0xD9, val);
+	//on 2nd look may only be important for game logic
+	//so we dont need to save this for our audio
+	//if(val <= 0x12)
+	//	memSet8(0xD9, val);
 	u8 curslot = memGet8(0xDA);
 	u8 slotval = memGet8(0xDC+curslot);
 	if(slotval == 0x88)
