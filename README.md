@@ -1,6 +1,6 @@
 # About this Project  
 I created this to improve on control and audio issues found in the NES Ports of Mega Man 1 to 6 in the GameCube Mega Man Anniversary Collection.  
-As of right now the audio patches that completely replace how audio is played back apply to Mega Man 1 to 4 and the control patches that invert the A and B buttons to fix its controls apply to all included NES titles (Mega Man 1 to 6).  
+As of right now the audio patches that completely replace how audio is played back apply to Mega Man 1 to 5 (6 will follow soon) and the control patches that invert the A and B buttons to fix its controls apply to all included NES titles (Mega Man 1 to 6).  
 Now instead of playing through low quality recordings, I instead added a stripped down version of my NES emulator to play it back exactly as the original.  
 This also corrects audio issues such as files not looping/looping incorrectly and straight up wrong songs being played at times.   Also there is a small patch in place that allows you to hold start when the game starts up to skip over all the logo and intro movies straight into the menu. I created this patch mainly because when I play from sd card on my gamecube, it often crashes when it tries to play back the intro movies, maybe this is useful if you run into a similar issue.    
 
