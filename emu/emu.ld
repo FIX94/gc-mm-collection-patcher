@@ -19,10 +19,13 @@ SECTIONS {
 
 	mix_init_channel = 0x8007F7EC;
 
+	os_report = 0x8005A110;
+
 	os_disable_interrupts = 0x8005DD04;
 	os_restore_interrupts = 0x8005DD2C;
 
-	os_report = 0x8005A110;
+	os_link = 0x8005EBBC;
+
 	os_create_thread = 0x80062394;
 	os_resume_thread = 0x800629FC;
 	os_suspend_thread = 0x80062C84;
@@ -43,7 +46,7 @@ SECTIONS {
 	mmu_memset = 0x80038AD4;
 
 	/* game function exit addresses we patch */
-	module_init_exit_addr = 0x8001437C;
+	module_init_oslink_addr = 0x80014310;
 	module_uninit_exit_addr = 0x800145DC;
 
 	packfile_transfer_exit_addr = 0x80027C2C;

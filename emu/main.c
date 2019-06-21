@@ -11,20 +11,41 @@
 #include "ppu.h"
 #include "input.h"
 
-static void PatchB( u32 dst, u32 src )
+static void PatchB( void *dst, void *src )
 {
-	u32 newval = (dst - src);
+	u32 newval = ((u32)dst) - ((u32)src);
 	newval&= 0x03FFFFFC;
 	newval|= 0x48000000;
 	*(volatile u32*)src = newval;
-	dc_flush_range((void*)src, 4);
-	ic_inv_range((void*)src, 4);
+	dc_flush_range(src, 4);
+	ic_inv_range(src, 4);
 }
-static void PatchBLR( u32 addr )
+static void PatchBL( void *dst, void *src )
+{
+	u32 newval = ((u32)dst) - ((u32)src);
+	newval&= 0x03FFFFFC;
+	newval|= 0x48000001;
+	*(volatile u32*)src = newval;
+	dc_flush_range(src, 4);
+	ic_inv_range(src, 4);
+}
+static void PatchBLR( void *addr )
 {
 	*(volatile u32*)addr = 0x4E800020;
-	dc_flush_range((void*)addr, 4);
-	ic_inv_range((void*)addr, 4);
+	dc_flush_range(addr, 4);
+	ic_inv_range(addr, 4);
+}
+static void PatchNOP( void *addr )
+{
+	*(volatile u32*)addr = 0x60000000;
+	dc_flush_range(addr, 4);
+	ic_inv_range(addr, 4);
+}
+static void PatchByte( void *addr, u8 val )
+{
+	*(volatile u8*)addr = val;
+	dc_flush_range(addr, 1);
+	ic_inv_range(addr, 1);
 }
 
 static int cur_module = -1;
@@ -34,13 +55,14 @@ static u32 used_aram_addr_prev = 0;
 static u32 used_aram_addr_cur = 0;
 static u32 used_aram_addr_end = 0;
 
-static void _module_init_hook();
+static void _module_init_hook(void *ptr1, void *ptr2);
 static void _module_uninit_hook();
 void _packfile_transfer_prep();
 
-extern u32 module_init_exit_addr;
+extern u32 module_init_oslink_addr;
 extern u32 module_uninit_exit_addr;
 extern u32 packfile_transfer_exit_addr;
+
 void _main(int module, u32 aram_addr)
 {
 	//copy over current module id
@@ -51,9 +73,9 @@ void _main(int module, u32 aram_addr)
 	used_aram_addr_prev = aram_addr+0x280;
 	used_aram_addr_end = aram_addr+0x4FF;
 	// set up module patches
-	PatchB((u32)_module_init_hook, (u32)&module_init_exit_addr);
-	PatchB((u32)_module_uninit_hook, (u32)&module_uninit_exit_addr);
-	PatchB((u32)_packfile_transfer_prep, (u32)&packfile_transfer_exit_addr);
+	PatchBL(_module_init_hook, &module_init_oslink_addr);
+	PatchB(_module_uninit_hook, &module_uninit_exit_addr);
+	PatchB(_packfile_transfer_prep, &packfile_transfer_exit_addr);
 }
 
 
@@ -90,6 +112,7 @@ static void update_audio_data(u8 *data, u32 len)
 	dc_flush_range(data, len);
 	gc_aram_upload(data, used_aram_addr_cur, len, 0);
 }
+
 extern u8 game_gc_aram_busy;
 static void wait_audio_data()
 {
@@ -139,123 +162,124 @@ typedef struct _ax_voice_array {
 extern u32 *game_loaded_module;
 extern ax_voice_array game_ax_voice_array[];
 //from start.S
-extern u32 _our_play_addr;
-extern u32 _ori_play_endaddr;
+extern void *_our_fill_addr;
+extern void *_ori_play_endaddr;
 extern void _our_play_prep();
 //our hooks
-void _mm_playandexit(u32 val);
-void _mm2_playandexit(u32 val);
-void _mm3_mm4_playandexit(u32 val);
-static void _module_init_hook()
+static bool _got_game_hooks = false;
+static void *_our_empty_addr = (void*)0;
+static void *_ori_play_patchaddr = (void*)0;
+
+static void _mm1_mm2_fillqueue(u8 val);
+static void _mm3_mm4_mm5_fillqueue(u8 val);
+
+static void _mm1_emptyqueue(void);
+static void _mm2_emptyqueue(void);
+static void _mm3_mm4_mm5_emptyqueue(void);
+
+static void _module_init_hook(void *ptr1, void *ptr2)
 {
+	//original instruction
+	os_link(ptr1, ptr2);
+
 	//relentry1 start 80572CCC
 	u8 *relentry1 = (u8*)game_loaded_module[4];
+
 	//swap turbo A and B
 	//seemingly used in both MM1 and MM3
-	relentry1[0x64AF7] = 0x40; relentry1[0x64B13] = 0x40;
+	PatchByte(relentry1+0x64AF7, 0x40); PatchByte(relentry1+0x64B13, 0x40);
 	//seemingly used in MM2
-	relentry1[0x10753B] = 0x40; relentry1[0x107557] = 0x40;
+	PatchByte(relentry1+0x10753B, 0x40); PatchByte(relentry1+0x107557, 0x40);
 	//unused? I assume originally for MM3
-	relentry1[0x1F4C1B] = 0x40; relentry1[0x1F4C37] = 0x40;
+	PatchByte(relentry1+0x1F4C1B, 0x40); PatchByte(relentry1+0x1F4C37, 0x40);
 	//seemingly used in MM4
-	relentry1[0x2D60B3] = 0x40; relentry1[0x2D60DB] = 0x40;
+	PatchByte(relentry1+0x2D60B3, 0x40); PatchByte(relentry1+0x2D60DB, 0x40);
 	//seemingly used in MM5
-	relentry1[0x39802F] = 0x40; relentry1[0x398057] = 0x40;
+	PatchByte(relentry1+0x39802F, 0x40); PatchByte(relentry1+0x398057, 0x40);
 	//seemingly used in MM6
-	relentry1[0x47F507] = 0x40; relentry1[0x47F52F] = 0x40;
+	PatchByte(relentry1+0x47F507, 0x40); PatchByte(relentry1+0x47F52F, 0x40);
+
 	//swap slide A and B
 	//unused? I assume originally for MM3
-	relentry1[0x1F4C5F] = 0x80;
+	PatchByte(relentry1+0x1F4C5F, 0x80);
 	//seemingly used in MM4
-	relentry1[0x2D60FF] = 0x80;
+	PatchByte(relentry1+0x2D60FF, 0x80);
 	//seemingly used in MM5
-	relentry1[0x3980B7] = 0x80; relentry1[0x3980CB] = 0x80;
+	//requires 2 patches cause of gravity mans stage
+	PatchByte(relentry1+0x3980B7, 0x80); PatchByte(relentry1+0x3980CB, 0x80);
 	//seemingly used in MM6
-	relentry1[0x47F543] = 0x80;
-	//MM1-MM6 swap A and B
+	PatchByte(relentry1+0x47F543, 0x80);
+
+	//relentry2 start 809F5FAC
 	u8 *relentry2 = (u8*)game_loaded_module[0xD];
-	relentry2[0xD89E] = 2; relentry2[0xD89F] = 1;
+
+	//MM1-MM6 swap A and B
+	PatchByte(relentry2+0xD89E, 2); PatchByte(relentry2+0xD89F, 1);
 	//extra patch required for MM2 to allow A
 	//in weapon menu after swapping A and B
-	relentry2[0x36E0D] = 0xD;
+	PatchByte(relentry2+0x36E0D, 0xD);
+
 	//actually do audio processing internally
-	if(cur_module == 0)
+	if(cur_module == 0) //MM1
 	{
-		_our_play_addr = (u32)_mm_playandexit;
-		PatchB((u32)_our_play_prep, (u32)relentry1+0x63B68);
-		_ori_play_endaddr = (u32)relentry1+0x63B68+0x334;
+		_got_game_hooks = true;
+		_our_fill_addr = _mm1_mm2_fillqueue;
+		_our_empty_addr = _mm1_emptyqueue;
+		_ori_play_patchaddr = relentry1+0x63B68;
+		_ori_play_endaddr = _ori_play_patchaddr+0x334;
+		//MM1 has hurt sound set to 0x33 for some reason, even though in
+		//the original driver it should be 0x16 instead, so change it back
+		PatchByte(relentry1+0x79DEF, 0x16);
 	}
-	else if(cur_module == 1)
+	else if(cur_module == 1) //MM2
 	{
-		_our_play_addr = (u32)_mm2_playandexit;
-		PatchB((u32)_our_play_prep, (u32)relentry1+0xF709C);
-		_ori_play_endaddr = (u32)relentry1+0xF709C+0x348;
+		_got_game_hooks = true;
+		_our_fill_addr = _mm1_mm2_fillqueue;
+		_our_empty_addr = _mm2_emptyqueue;
+		_ori_play_patchaddr = relentry1+0xF709C;
+		_ori_play_endaddr = _ori_play_patchaddr+0x348;
+		//in MM2 the main theme part of the ending got a new ID of 0x18,
+		//but in the original NES driver that ID is 0xD, so change it back
+		PatchByte(relentry1+0x98B77, 0x0D);
 	}
-	else if(cur_module == 2)
+	else if(cur_module == 2) //MM3
 	{
-		_our_play_addr = (u32)_mm3_mm4_playandexit;
-		PatchB((u32)_our_play_prep, (u32)relentry1+0x1F21C4);
-		_ori_play_endaddr = (u32)relentry1+0x1F21C4+0x354;
+		_got_game_hooks = true;
+		_our_fill_addr = _mm3_mm4_mm5_fillqueue;
+		_our_empty_addr = _mm3_mm4_mm5_emptyqueue;
+		_ori_play_patchaddr = relentry1+0x1F21C4;
+		_ori_play_endaddr = _ori_play_patchaddr+0x354;
 	}
-	else if(cur_module == 3)
+	else if(cur_module == 3) //MM4
 	{
-		_our_play_addr = (u32)_mm3_mm4_playandexit;
-		PatchB((u32)_our_play_prep, (u32)relentry1+0x2D2B60);
-		_ori_play_endaddr = (u32)relentry1+0x2D2B60+0x458;
+		_got_game_hooks = true;
+		_our_fill_addr = _mm3_mm4_mm5_fillqueue;
+		_our_empty_addr = _mm3_mm4_mm5_emptyqueue;
+		_ori_play_patchaddr = relentry1+0x2D2B60;
+		_ori_play_endaddr = _ori_play_patchaddr+0x458;
 	}
-	else
-		return;
+	else if(cur_module == 4) //MM5
+	{
+		_got_game_hooks = true;
+		_our_fill_addr = _mm3_mm4_mm5_fillqueue;
+		_our_empty_addr = _mm3_mm4_mm5_emptyqueue;
+		_ori_play_patchaddr = relentry1+0x395420;
+		_ori_play_endaddr = _ori_play_patchaddr+0x448;
+		//the audio driver for MM5 is strangely messed up in different ways,
+		//it likes to send more F1 commands (stop sfx) than it should,
+		//these patches remove those calls when dying, because otherwise it
+		//mutes the death sound before its ever even played
+		PatchNOP(relentry1+0x2EC454); //taking lethal damage
+		PatchNOP(relentry1+0x358EB4); //falling into pit
+		//this just has the potential to mute other sounds when shooting
+		PatchNOP(relentry1+0x36AECC); //shooting charge shot
+		//it also sends out more F2 commands (stop music) than it should
+		PatchNOP(relentry1+0x3165BC); //elevator in gyro man stage
+	}
 	/* todo
-	else if(cur_module == 4)
-	{
-	}
 	else if(cur_module == 5)
 	{
 	} */
-	//grab voice to use
-	if(!used_nes_voice)
-		used_nes_voice = ax_acquire_voice(31,(void*)0,0);
-	if(!used_nes_voice)
-		return;
-	//clear old aram
-	u8 *tmpbuf = apuGetBuf();
-	u32 tmpsize = apuGetBufSize();
-	if(tmpbuf && tmpsize == 0x280)
-	{
-		mmu_memset(tmpbuf, 0, tmpsize);
-		dc_flush_range(tmpbuf, tmpsize);
-		wait_audio_data();
-		gc_aram_upload(tmpbuf, used_aram_addr, tmpsize, 0);
-		wait_audio_data();
-		gc_aram_upload(tmpbuf, used_aram_addr+0x280, tmpsize, 0);
-		wait_audio_data();
-	}
-	used_aram_addr_cur = used_aram_addr;
-	used_aram_addr_prev = used_aram_addr+0x280;
-	//setup voice
-	mix_init_channel(used_nes_voice, 0, 0, -960, -960, 64, 127, 0);
-	u16 ax_addr_arr[8];
-	ax_addr_arr[0] = 1; //looping
-	ax_addr_arr[1] = 0xA; //pcm16
-	u32 shifted_addr = used_aram_addr>>1;
-	ax_addr_arr[2] = shifted_addr>>16;
-	ax_addr_arr[3] = shifted_addr&0xFFFF;
-	u32 shifted_addr_end = used_aram_addr_end>>1;
-	ax_addr_arr[4] = shifted_addr_end>>16;
-	ax_addr_arr[5] = shifted_addr_end&0xFFFF;
-	ax_addr_arr[6] = shifted_addr>>16;
-	ax_addr_arr[7] = shifted_addr&0xFFFF;
-	ax_set_voice_addr(used_nes_voice, ax_addr_arr);
-	ax_set_voice_src_type(used_nes_voice, 0);
-	//register voice into game and set callback
-	u32 idx = *(u32*)(used_nes_voice+0x18);
-	game_ax_voice_array[idx].addr = used_nes_voice;
-	game_ax_voice_array[idx].val1 = 4;
-	game_ax_voice_array[idx].val2 = 0xDEADBEEF+0x14;
-	game_ax_voice_array[idx].val3 = 0xFFFFFFFF;
-	sfx_registercallback(_my_sfx_callback);
-	//and go
-	ax_set_voice_state(used_nes_voice, 1);
 }
 
 static u8 *thread_stack = (u8*)0;
@@ -263,6 +287,8 @@ static u8 *game_driver_addr_p1 = (u8*)0; //16/8k bank 0
 static u8 *game_driver_addr_p2 = (u8*)0; //16/8k bank 1
 static u8 *game_driver_addr_p3 = (u8*)0; //8k bank 2
 static u8 *game_driver_addr_p4 = (u8*)0; //8k bank 3
+//used in cpu.c
+void(*doEmptyQueue)(void) = (void*)0;
 
 static void _module_uninit_hook()
 {
@@ -299,13 +325,21 @@ static void _module_uninit_hook()
 	game_driver_addr_p2 = (void*)0;
 	game_driver_addr_p3 = (void*)0;
 	game_driver_addr_p4 = (void*)0;
-	//revert module hooks
-	PatchBLR((u32)&module_init_exit_addr); //revert module init
-	PatchBLR((u32)&module_uninit_exit_addr); //revert module uninit
-	PatchBLR((u32)&packfile_transfer_exit_addr); //revert pack transfer
+	//reset nes driver hook
+	_got_game_hooks = false;
+	_our_fill_addr = (void*)0;
+	_our_empty_addr = (void*)0;
+	_ori_play_patchaddr = (void*)0;
+	_ori_play_endaddr = (void*)0;
+	doEmptyQueue = (void*)0;
 	//reset current module id
 	cur_module = -1;
+	//revert module hooks
+	PatchBL(os_link, &module_init_oslink_addr); //revert module init
+	PatchBLR(&module_uninit_exit_addr); //revert module uninit
+	PatchBLR(&packfile_transfer_exit_addr); //revert pack transfer
 }
+
 static uint8_t bin1Get_16k(uint16_t addr)
 {
 	return game_driver_addr_p1[addr&0x3FFF];
@@ -333,8 +367,13 @@ static uint8_t bin4Get_8k(uint16_t addr)
 }
 
 extern uint16_t game_amp_val;
+//used in apu.c and cpu.c
 uint8_t curAmpVal = 0;
 uint16_t game_driver_start = 0, game_driver_end = 0;
+//used to buffer emu and game thread
+static int _intqueue = 0;
+static u8 _intarray[0x10];
+
 void _mm_packfile_transfer_hook(int id, u8 *address)
 {
 	bool got_nes_rom = false;
@@ -351,8 +390,7 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		//entry at bank 7+0x1551 (D551)
 		game_driver_start = 0xD551;
 		//force end at bank 7+0x156E (D56E)
-		//and add one instruction below BLE to not false end early
-		game_driver_end = 0xD570;
+		game_driver_end = 0xD56E;
 	} //MM2 pack loaded that contains NES rom
 	else if(cur_module == 1 && id == 0x13)
 	{
@@ -362,14 +400,13 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		game_driver_addr_p1 = address+(0xC<<14)+nes_hdr_len;
 		//remove door open/close loop in sound driver,
 		//because the game does not properly stop it
-		game_driver_addr_p1[0x3DB2] = 6;
+		PatchByte(game_driver_addr_p1+0x3DB2, 6);
 		//static bank F
 		game_driver_addr_p2 = address+(0xF<<14)+nes_hdr_len;
 		//entry at bank F+0x10A7 (D0A7)
 		game_driver_start = 0xD0A7;
 		//force end at bank F+0x10BE (D0BE)
-		//and add one instruction below BLE to not false end early
-		game_driver_end = 0xD0C0;
+		game_driver_end = 0xD0BE;
 	} //MM3 pack loaded that contains NES rom
 	else if(cur_module == 2 && id == 0x13)
 	{
@@ -381,10 +418,10 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		game_driver_addr_p3 = address+(0x18<<13)+nes_hdr_len;
 		//patch out bank switching code, we have that
 		//bank hardcoded into the right spot already
-		game_driver_addr_p1[0x3E] = 0xEA; game_driver_addr_p1[0x3F] = 0xEA;
-		game_driver_addr_p1[0x40] = 0xEA; game_driver_addr_p1[0x41] = 0xEA;
+		PatchByte(game_driver_addr_p1+0x3E, 0xEA); PatchByte(game_driver_addr_p1+0x3F, 0xEA);
+		PatchByte(game_driver_addr_p1+0x40, 0xEA); PatchByte(game_driver_addr_p1+0x41, 0xEA);
 		//static bank 1F
-		game_driver_addr_p4 = address+0x3E084;
+		game_driver_addr_p4 = address+(0x1F<<13)+nes_hdr_len;
 		//entry at bank 1F+0x1FA8 (FFA8)
 		game_driver_start = 0xFFA8;
 		//force end at bank 1F+0x1FC5 (FFC5)
@@ -400,16 +437,35 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		game_driver_addr_p3 = address+(0x1D<<13)+nes_hdr_len;
 		//patch out bank switching code, we have that
 		//bank hardcoded into the right spot already
-		game_driver_addr_p1[0x3E] = 0xEA; game_driver_addr_p1[0x3F] = 0xEA;
-		game_driver_addr_p1[0x40] = 0xEA; game_driver_addr_p1[0x41] = 0xEA;
+		PatchByte(game_driver_addr_p1+0x3E, 0xEA); PatchByte(game_driver_addr_p1+0x3F, 0xEA);
+		PatchByte(game_driver_addr_p1+0x40, 0xEA); PatchByte(game_driver_addr_p1+0x41, 0xEA);
 		//static bank 3F
 		game_driver_addr_p4 = address+(0x3F<<13)+nes_hdr_len;
 		//entry at bank 3F+0x1F78 (FF78)
 		game_driver_start = 0xFF78;
 		//force end at bank 3F+0x1F9F (FF9F)
 		game_driver_end = 0xFF9F;
+	} //MM5 pack loaded that contains NES rom
+	else if(cur_module == 4 && id == 0x16)
+	{
+		got_nes_rom = true;
+		nes_hdr_len = 0x84;
+		//music banks 18, 19 and 1A
+		game_driver_addr_p1 = address+(0x18<<13)+nes_hdr_len;
+		game_driver_addr_p2 = address+(0x19<<13)+nes_hdr_len;
+		game_driver_addr_p3 = address+(0x1A<<13)+nes_hdr_len;
+		//patch out bank switching code, we have that
+		//bank hardcoded into the right spot already
+		PatchByte(game_driver_addr_p1+0x3E, 0xEA); PatchByte(game_driver_addr_p1+0x3F, 0xEA);
+		PatchByte(game_driver_addr_p1+0x40, 0xEA); PatchByte(game_driver_addr_p1+0x41, 0xEA);
+		//static bank 1F
+		game_driver_addr_p4 = address+(0x1F<<13)+nes_hdr_len;
+		//entry at bank 1F+0x1F88 (FF88)
+		game_driver_start = 0xFF88;
+		//force end at bank 1F+0x1FA9 (FFA9)
+		game_driver_end = 0xFFA9;
 	}
-	if(got_nes_rom)
+	if(got_nes_rom && _got_game_hooks)
 	{
 		//use music volume for driver general volume
 		uint16_t tmpval = game_amp_val>>1;
@@ -423,14 +479,14 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 		inputInit();
 		memInitGetSetPointers(); //pre-set get8/set8
 		uint32_t addr;
-		if(cur_module == 0 || cur_module == 1)
+		if(cur_module == 0 || cur_module == 1) //MM1/MM2
 		{
 			for(addr = 0x8000; addr < 0xC000; addr++)
 				memInitMapperGetPointer(addr, bin1Get_16k);
 			for(addr = 0xC000; addr < 0x10000; addr++)
 				memInitMapperGetPointer(addr, bin2Get_16k);
 		}
-		else //MM3/MM4
+		else //MM3/MM4/MM5
 		{
 			for(addr = 0x8000; addr < 0xA000; addr++)
 				memInitMapperGetPointer(addr, bin1Get_8k);
@@ -444,62 +500,104 @@ void _mm_packfile_transfer_hook(int id, u8 *address)
 			for(addr = 0xDC; addr < 0xE4; addr++)
 				memSet8(addr, 0x88);
 		}
+		//got ROM so we can now patch the music call
+		PatchB(_our_play_prep, _ori_play_patchaddr);
+		doEmptyQueue = _our_empty_addr;
+		_intqueue = 0;
 		//create emu thread
 		our_thread = bink_mmu_malloc(0x400);
 		thread_stack = bink_mmu_malloc(0x800);
 		os_create_thread(our_thread, doFrameUpdate, 0, thread_stack + 0x800, 0x800, 0, 0);
 		running = 1;
+		//grab voice to use
+		used_nes_voice = ax_acquire_voice(31,(void*)0,0);
+		//clear old aram
+		u8 *tmpbuf = apuGetBuf();
+		u32 tmpsize = apuGetBufSize();
+		mmu_memset(tmpbuf, 0, tmpsize);
+		dc_flush_range(tmpbuf, tmpsize);
+		wait_audio_data();
+		gc_aram_upload(tmpbuf, used_aram_addr, tmpsize, 0);
+		wait_audio_data();
+		gc_aram_upload(tmpbuf, used_aram_addr+0x280, tmpsize, 0);
+		wait_audio_data();
+		//reset aram addresses
+		used_aram_addr_cur = used_aram_addr;
+		used_aram_addr_prev = used_aram_addr+0x280;
+		//setup voice
+		mix_init_channel(used_nes_voice, 0, 0, -960, -960, 64, 127, 0);
+		u16 ax_addr_arr[8];
+		ax_addr_arr[0] = 1; //looping
+		ax_addr_arr[1] = 0xA; //pcm16
+		u32 shifted_addr = used_aram_addr>>1;
+		ax_addr_arr[2] = shifted_addr>>16;
+		ax_addr_arr[3] = shifted_addr&0xFFFF;
+		u32 shifted_addr_end = used_aram_addr_end>>1;
+		ax_addr_arr[4] = shifted_addr_end>>16;
+		ax_addr_arr[5] = shifted_addr_end&0xFFFF;
+		ax_addr_arr[6] = shifted_addr>>16;
+		ax_addr_arr[7] = shifted_addr&0xFFFF;
+		ax_set_voice_addr(used_nes_voice, ax_addr_arr);
+		ax_set_voice_src_type(used_nes_voice, 0);
+		//register voice into game and set callback
+		u32 idx = *(u32*)(used_nes_voice+0x18);
+		game_ax_voice_array[idx].addr = used_nes_voice;
+		game_ax_voice_array[idx].val1 = 4;
+		game_ax_voice_array[idx].val2 = 0xDEADBEEF+0x14;
+		game_ax_voice_array[idx].val3 = 0xFFFFFFFF;
+		sfx_registercallback(_my_sfx_callback);
+		//and go
+		ax_set_voice_state(used_nes_voice, 1);
 	}
 }
-int os_disable_interrupts();
-int os_restore_interrupts(int t);
-//code is like internal MM1 play routine
-void _mm_playandexit(u32 val)
+
+//store request into separate queue for thread separation
+static void _mm1_mm2_fillqueue(u8 val)
 {
 	int t = os_disable_interrupts();
-	u8 used = memGet8(0x45);
-	if(used < 0x10)
-	{
-		//out of all things to change, its the hurt sound,
-		//now being an ID thats not in the original NES driver,
-		//so I guess as dumb as it is, we have to redirect it...
-		if(val == 0x33) val = 0x16;
-		memSet8(0x580+used,val);
-		memSet8(0x45,used+1);
-	}
+	if(_intqueue < 0x10) //up to 16 elements
+		_intarray[_intqueue++] = val;
 	os_restore_interrupts(t);
 }
-//code is like internal MM2 play routine
-void _mm2_playandexit(u32 val)
+static void _mm3_mm4_mm5_fillqueue(u8 val)
 {
 	int t = os_disable_interrupts();
-	u8 used = memGet8(0x66);
-	if(used < 0x10)
-	{
-		//the main theme part of the ending got its own ID in game,
-		//but in the original NES driver that ID does not exist,
-		//so redirect it to the original main theme ID to fix this
-		if(val == 0x18) val = 0xD;
-		memSet8(0x580+used,val);
-		memSet8(0x66,used+1);
-	}
+	if(_intqueue < 8) //up to 8 elements
+		_intarray[_intqueue++] = val;
 	os_restore_interrupts(t);
 }
-//code is like internal MM3/MM4 play routine
-void _mm3_mm4_playandexit(u32 val)
+
+//empty queue into emu mem for internal MM1 play routine
+static void _mm1_emptyqueue()
 {
 	int t = os_disable_interrupts();
-	//pieces of music always get stored here
-	//on 2nd look may only be important for game logic
-	//so we dont need to save this for our audio
-	//if(val <= 0x12)
-	//	memSet8(0xD9, val);
+	int copypos;
+	for(copypos = 0; copypos < _intqueue; copypos++)
+		memSet8(0x580+copypos, _intarray[copypos]);
+	memSet8(0x45, _intqueue);
+	_intqueue = 0;
+	os_restore_interrupts(t);
+}
+//empty queue into emu mem for internal MM2 play routine
+static void _mm2_emptyqueue()
+{
+	int t = os_disable_interrupts();
+	int copypos;
+	for(copypos = 0; copypos < _intqueue; copypos++)
+		memSet8(0x580+copypos, _intarray[copypos]);
+	memSet8(0x66, _intqueue);
+	_intqueue = 0;
+	os_restore_interrupts(t);
+}
+//empty queue into emu mem for internal MM3/MM4/MM5 play routine
+static void _mm3_mm4_mm5_emptyqueue()
+{
+	int t = os_disable_interrupts();
 	u8 curslot = memGet8(0xDA);
-	u8 slotval = memGet8(0xDC+curslot);
-	if(slotval == 0x88)
-	{
-		memSet8(0xDC+curslot,val);
-		memSet8(0xDA,(curslot+1)&7);
-	}
+	int copypos;
+	for(copypos = 0; copypos < _intqueue; copypos++)
+		memSet8(0xDC+((curslot+copypos)&7), _intarray[copypos]);
+	memSet8(0xDA, (curslot+_intqueue)&7);
+	_intqueue = 0;
 	os_restore_interrupts(t);
 }

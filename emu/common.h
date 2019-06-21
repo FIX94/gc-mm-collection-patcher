@@ -45,6 +45,13 @@ void ax_free_voice(u8 *voice);
 
 void mix_init_channel(void *voice, int v1, int v2, int v3, int v4, int v5, int v6, int v7);
 
+void os_report(const char *in, ...);
+
+int os_disable_interrupts();
+int os_restore_interrupts(int t);
+
+void os_link(void *ptr1, void *ptr2);
+
 void os_create_thread(void *thread, void *func, u32 funcvar, void *stack_start, u32 stack_size, u32 prio, u32 params);
 void os_resume_thread(void *thread);
 void os_suspend_thread(void *thread);

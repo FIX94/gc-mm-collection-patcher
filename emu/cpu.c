@@ -59,7 +59,9 @@ static struct {
 } cpu;
 
 static void cpuSetStartArray();
+//specific to MM audio playback
 extern uint16_t game_driver_start, game_driver_end;
+extern void(*doEmptyQueue)(void);
 void cpuInit()
 {
 	cpuSetStartArray();
@@ -798,6 +800,14 @@ static bool cpuHandleIrqUpdates()
 		nsf_startPlayback = false;
 		return true;
 	}*/
+	//specific to MM audio playback
+	if(cpu.pc == game_driver_end)
+	{
+		cpu.pc = game_driver_start;
+		cpu.active = false;
+		cpuSetStartArray();
+		return true;
+	}
 	return false;
 }
 
@@ -978,18 +988,20 @@ FIXNES_NOINLINE static void cpuDoDMA()
 			cpu.oam_halted = true;
 	}
 }
-void cpuActivate() { cpu.active = true; }
+//specific to MM audio playback
+void cpuActivate()
+{
+	if(!cpu.active)
+		doEmptyQueue();
+	cpu.active = true;
+}
 /* Main CPU Interpreter */
 FIXNES_ALWAYSINLINE bool cpuCycle()
 {
-	//specific to MM1/MM2 audio playback
-	if(!cpu.active) return true;
-	else if(cpu.pc == game_driver_end)
-	{
-		cpu.pc = game_driver_start;
-		cpu.active = false;
+	//specific to MM audio playback
+	if(!cpu.active)
 		return true;
-	}
+
 	cpu_odd_cycle^=true;
 	//printf("CPU Cycle\n");
 	//do DMC and OAM DMA first
