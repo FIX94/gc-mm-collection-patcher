@@ -10,7 +10,8 @@
 
 #include "common.h"
 
-#define NUM_BUFFERS 4
+#define BUF_32K_SMPL 0xA0
+#define BUF_32K_BYTES (BUF_32K_SMPL<<1)
 
 void apuInitBufs();
 void apuDeinitBufs();

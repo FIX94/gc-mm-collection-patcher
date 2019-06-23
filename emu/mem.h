@@ -12,6 +12,7 @@ typedef void (*set8FuncT)(uint16_t, uint8_t);
 typedef void (*cycleFuncT)();
 typedef void (*resetFuncT)();
 void memInit();
+void memInitBufs();
 void memDeinitBufs();
 void memInitGetSetPointers();
 void memInitMapperGetPointer(uint16_t addr, get8FuncT func);

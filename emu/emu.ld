@@ -51,6 +51,8 @@ SECTIONS {
 
 	packfile_transfer_exit_addr = 0x80027C2C;
 
+	sfx_load_beq_addr = 0x80003AF8;
+
 	/* game vars we use */
 	game_ax_voice_array = 0x800DCCD4;
 

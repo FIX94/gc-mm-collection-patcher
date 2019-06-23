@@ -19,33 +19,39 @@ static uint8_t memGet8OpenBus(uint16_t addr);
 static void memSet8OpenBus(uint16_t addr, uint8_t val);
 static uint8_t memGet8MainMem(uint16_t addr);
 static void memSet8MainMem(uint16_t addr, uint8_t val);
-static get8FuncT *memPPUGet8ptr;
-static set8FuncT *memPPUSet8ptr;
-static uint8_t memChrGet8None(uint16_t addr);
-static void memChrSet8None(uint16_t addr, uint8_t val);
-static uint8_t *Main_Mem;
+//static get8FuncT *memPPUGet8ptr;
+//static set8FuncT *memPPUSet8ptr;
+//static uint8_t memChrGet8None(uint16_t addr);
+//static void memChrSet8None(uint16_t addr, uint8_t val);
+static uint8_t Main_Mem[0x800];
 uint8_t memLastVal;
 
 void memInit()
 {
-	memGet8ptr = bink_mmu_malloc(0x10000*sizeof(get8FuncT));
-	memSet8ptr = bink_mmu_malloc(0x10000*sizeof(get8FuncT));
-	memPPUGet8ptr = bink_mmu_malloc(0x4000*sizeof(get8FuncT));
-	memPPUSet8ptr = bink_mmu_malloc(0x4000*sizeof(get8FuncT));
-	Main_Mem = bink_mmu_malloc(0x800);
 	mmu_memset(Main_Mem,0,0x800);
 	memLastVal = 0;
+}
+void memInitBufs()
+{
+	//gotta go on a little bit of a budget build here :/
+	memGet8ptr = bink_mmu_malloc(0x10000*sizeof(get8FuncT));
+	memSet8ptr = bink_mmu_malloc(0x4020*sizeof(set8FuncT));
+	//memGet8ptr = bink_mmu_malloc(0x10000*sizeof(get8FuncT));
+	//memSet8ptr = bink_mmu_malloc(0x10000*sizeof(get8FuncT));
+	//memPPUGet8ptr = bink_mmu_malloc(0x4000*sizeof(get8FuncT));
+	//memPPUSet8ptr = bink_mmu_malloc(0x4000*sizeof(get8FuncT));
+	//Main_Mem = bink_mmu_malloc(0x800);
 }
 void memDeinitBufs()
 {
 	if(memGet8ptr) mmu_free(memGet8ptr);
 	if(memSet8ptr) mmu_free(memSet8ptr);
-	if(memPPUGet8ptr) mmu_free(memPPUGet8ptr);
-	if(memPPUSet8ptr) mmu_free(memPPUSet8ptr);
-	if(Main_Mem) mmu_free(Main_Mem);
+	//if(memPPUGet8ptr) mmu_free(memPPUGet8ptr);
+	//if(memPPUSet8ptr) mmu_free(memPPUSet8ptr);
+	//if(Main_Mem) mmu_free(Main_Mem);
 	memGet8ptr = (void*)0; memSet8ptr = (void*)0;
-	memPPUGet8ptr = (void*)0; memPPUSet8ptr = (void*)0;
-	Main_Mem = (void*)0;
+	//memPPUGet8ptr = (void*)0; memPPUSet8ptr = (void*)0;
+	//Main_Mem = (void*)0;
 }
 
 void memInitGetSetPointers()
@@ -53,14 +59,14 @@ void memInitGetSetPointers()
 	//printf("Setting Mem Pointers\n");
 	//init memPPUGet8 and memPPUSet8 arrays
 	uint32_t addr;
-	for(addr = 0; addr < 0x4000; addr++)
+	/*for(addr = 0; addr < 0x4000; addr++)
 	{
 		//if(addr < 0x2000)
 		{
 			memPPUGet8ptr[addr] = memChrGet8None;
 			memPPUSet8ptr[addr] = memChrSet8None;
 		}
-		/*else if(addr < 0x2400)
+		else if(addr < 0x2400)
 		{
 			memPPUGet8ptr[addr] = ppuGetVRAM0;
 			memPPUSet8ptr[addr] = ppuSetVRAM0;
@@ -107,8 +113,8 @@ void memInitGetSetPointers()
 				memPPUSet8ptr[addr] = ppuSetPALRAMMirror;
 			else //normal mem set
 				memPPUSet8ptr[addr] = ppuSetPALRAM;
-		}*/
-	}
+		}
+	}*/
 	//init memGet8 and memSet8 arrays
 	for(addr = 0; addr < 0x10000; addr++)
 	{
@@ -132,7 +138,7 @@ void memInitGetSetPointers()
 			memGet8ptr[addr] = memGet8MainMem;
 		//set pointers
 		if(addr >= 0x4020) //set up by mapper
-			memSet8ptr[addr] = memSet8OpenBus;
+		{ }	//memSet8ptr[addr] = memSet8OpenBus;
 		else if(addr >= 0x4000)
 		{
 			if(addr == 0x4000) memSet8ptr[addr] = apuSetReg00;
@@ -196,7 +202,7 @@ static void memSet8OpenBus(uint16_t addr, uint8_t val)
 	(void)addr;
 	(void)val;
 }
-
+/*
 static uint8_t memChrGet8None(uint16_t addr)
 {
 	(void)addr;
@@ -208,7 +214,7 @@ static void memChrSet8None(uint16_t addr, uint8_t val)
 	(void)addr;
 	(void)val;
 }
-
+*/
 static uint8_t memGet8MainMem(uint16_t addr)
 {
 	return Main_Mem[addr&0x7FF];
@@ -228,16 +234,21 @@ uint8_t memGet8(uint16_t addr)
 
 void memSet8(uint16_t addr, uint8_t val)
 {
-	memSet8ptr[addr](addr, val);
+	if(addr < 0x4020) //ugly...
+		memSet8ptr[addr](addr, val);
 	memLastVal = val;
 }
 
 uint8_t memPPUGet8(uint16_t addr)
 {
-	return memPPUGet8ptr[addr](addr);
+	(void)addr;
+	return 0;
+	//return memPPUGet8ptr[addr](addr);
 }
 
 void memPPUSet8(uint16_t addr, uint8_t val)
 {
-	memPPUSet8ptr[addr](addr, val);
+	(void)addr;
+	(void)val;
+	//memPPUSet8ptr[addr](addr, val);
 }

@@ -27,7 +27,7 @@
 static struct {
 	uint8_t reg[0x18];
 	//uint32_t BufSize;
-	uint32_t BufSizeBytes;
+	//uint32_t BufSizeBytes;
 	uint32_t curBufPos;
 	uint32_t Frequency;
 	uint16_t freq1;
@@ -63,7 +63,7 @@ static struct {
 	int32_t tndLookupTbl[204];
 	int32_t lpVal;
 	int32_t hpVal;
-	int16_t *OutBuf;
+	//int16_t *OutBuf;
 	int32_t lastHPOut;
 	int32_t lastLPOut;
 
@@ -72,6 +72,7 @@ static struct {
 	uint8_t vrc7Clock;
 	uint8_t apuClock;
 	uint8_t apuClock2;
+	uint8_t apuClock3;
 	uint8_t p1Out;
 	uint8_t p2Out;
 	uint8_t triOut;
@@ -84,6 +85,8 @@ static struct {
 
 	bool waitForRefill;
 } apu;
+
+static int16_t _buf32k[BUF_32K_SMPL] __attribute__((aligned(32)));
 
 //used externally
 const uint8_t lengthLookupTbl[0x20] = {
@@ -139,7 +142,7 @@ void apuInitBufs()
 	apu.Frequency = nesPAL ? 207825 : 223721;
 #endif*/
 	//value specifically for gamecube
-	apu.Frequency = 32001;
+	apu.Frequency = 223721;
 	double dt = 1.0/((double)apu.Frequency);
 	//LP at 14kHz
 	double rc = 1.0/(M_2_PI * 14000.0);
@@ -152,8 +155,8 @@ void apuInitBufs()
 	apu.hpVal = (int32_t)((rc / (rc + dt))*32768.0);
 
 	//reflect allocated space in aram
-	apu.BufSizeBytes = 0x280;
-	apu.OutBuf = (int16_t*)bink_mmu_malloc(apu.BufSizeBytes);
+	//apu.BufSizeBytes = 0x280;
+	//apu.OutBuf = (int16_t*)bink_mmu_malloc(apu.BufSizeBytes);
 	//printf("Audio: 16-bit Short Output at %iHz\n", apu.Frequency);
 
 	/* https://wiki.nesdev.com/w/index.php/APU_Mixer#Lookup_Table */
@@ -163,18 +166,19 @@ void apuInitBufs()
 	for(i = 0; i < 204; i++)
 		apu.tndLookupTbl[i] = (int32_t)((163.67 / ((24329.0 / i) + 100))*32768.0);
 }
-
+/*
 void apuDeinitBufs()
 {
 	if(apu.OutBuf)
 		mmu_free(apu.OutBuf);
 	apu.OutBuf = (void*)0;
 }
-
+*/
 void apuInit()
 {
 	mmu_memset(apu.reg,0,0x18);
-	mmu_memset(apu.OutBuf, 0, apu.BufSizeBytes);
+	//mmu_memset(apu.outBuf, 0, apu.BufSizeBytes);
+	mmu_memset(_buf32k, 0, BUF_32K_BYTES);
 	apu.curBufPos = 0;
 
 	apu.freq1 = 0; apu.freq2 = 0; apu.triFreq = 0; apu.noiseFreq = noisePeriodNtsc[0]-1, apu.dmcFreq = dmcPeriodNtsc[0]-1;
@@ -213,6 +217,7 @@ void apuInit()
 	apu.vrc7Clock = 1;
 	apu.apuClock = 0;
 	apu.apuClock2 = 0;
+	apu.apuClock3 = 0;
 
 	apu.mode5 = false;
 	apu.modePos = 5;
@@ -367,18 +372,8 @@ FIXNES_NOINLINE static void apuClockB()
 extern uint8_t curAmpVal;
 FIXNES_ALWAYSINLINE void apuCycle()
 {
-	if(apu.apuClock == 56)
+	if(!(apu.apuClock&7))
 	{
-		if(apu.apuClock2 == 13)
-		{
-			apu.apuClock = 1; //so 55 cycles for next data block
-			apu.apuClock2 = 0;
-		}
-		else
-		{
-			apu.apuClock = 0;
-			apu.apuClock2++;
-		}
 		if(apu.p1LengthCtr && (apu.reg[0x15] & P1_ENABLE))
 		{
 			if(!apu.p1Sweep.mute)
@@ -411,10 +406,28 @@ FIXNES_ALWAYSINLINE void apuCycle()
 		curOut = (apu.hpVal*curIn)>>15; //Set Highpass Output
 		apu.lastHPOut = curOut; //Save Highpass Output
 		//Save Clipped Highpass Output
-		apu.OutBuf[apu.curBufPos] = (curOut > 32767)?(32767):((curOut < -32768)?(-32768):curOut);
-		apu.curBufPos++;
+		//apu.outBuf[apu.curBufPos] = (curOut > 32767)?(32767):((curOut < -32768)?(-32768):curOut);
 	}
 	apu.apuClock++;
+
+	//only save at 32001Hz using nearest resample
+	if(apu.apuClock2 == 56)
+	{
+		if(apu.apuClock3 == 13)
+		{
+			apu.apuClock2 = 1; //so 55 cycles for next data block
+			apu.apuClock3 = 0;
+		}
+		else
+		{
+			apu.apuClock2 = 0;
+			apu.apuClock3++;
+		}
+		//Save Clipped Highpass Output
+		_buf32k[apu.curBufPos] = (apu.lastHPOut > 32767)?(32767):((apu.lastHPOut < -32768)?(-32768):apu.lastHPOut);
+		apu.curBufPos++;
+	}
+	apu.apuClock2++;
 
 	if(apu.p1freqCtr == 0)
 	{
@@ -762,7 +775,7 @@ void apuReset()
 
 uint8_t *apuGetBuf()
 {
-	return (uint8_t*)apu.OutBuf;
+	return (uint8_t*)_buf32k;//apu.OutBuf;
 }
 
 uint32_t apuGetCurPosBytes()
@@ -772,7 +785,7 @@ uint32_t apuGetCurPosBytes()
 
 uint32_t apuGetBufSize()
 {
-	return apu.BufSizeBytes;
+	return BUF_32K_BYTES;//apu.BufSizeBytes;
 }
 
 int apuReady()
