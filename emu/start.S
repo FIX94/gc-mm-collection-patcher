@@ -40,3 +40,20 @@ _our_play_prep:
 	lwz 4, _our_fill_addr@l(4)
 	mtctr 4
 	bctr
+
+#practically like _our_play_prep but for only
+#a single command and return address for MM6
+.global _mm6_cleft_ret_addr
+_mm6_cleft_ret_addr:
+	.long 0
+
+.global _mm6_cleft_stopsfx
+_mm6_cleft_stopsfx:
+	li 3, 0xF1 #stop sfx cmd
+	lis 4, _mm6_cleft_ret_addr@ha
+	lwz 4, _mm6_cleft_ret_addr@l(4)
+	mtlr 4
+	lis 4, _our_fill_addr@ha
+	lwz 4, _our_fill_addr@l(4)
+	mtctr 4
+	bctr

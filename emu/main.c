@@ -181,6 +181,10 @@ static void _mm2_emptyqueue(void);
 static void _mm3_mm4_mm5_emptyqueue(void);
 static void _mm6_emptyqueue(void);
 
+//one additional dumb hook from start.S
+extern void *_mm6_cleft_ret_addr;
+extern void _mm6_cleft_stopsfx();
+
 static void _module_init_hook(void *ptr1, void *ptr2)
 {
 	//original instruction
@@ -330,6 +334,19 @@ static void _module_init_hook(void *ptr1, void *ptr2)
 		//also right when you hit the last shot on the final boss, it completely deletes all audio playing,
 		//meaning that if we dont patch this out, our own emu sound would suddenly disappear!
 		PatchNOP(relentry1+0x3E7994); //does a bl sfx_stopallplayingsounds
+		//also gotta deal with some of the extra features here that are added
+		PatchNOP(relentry1+0x480A50); //quickswap weapon with L+R part 1 (CMD 0xF3 for ID 0x2D)
+		PatchByte(relentry1+0x480A6F, 0xF1); //stop sfx when quickswapping with L+R to prevent issues
+		PatchNOP(relentry1+0x480A7C); //quickswap weapon with L+R part 2 (CMD 0xF2 for ID 0x29)
+		PatchNOP(relentry1+0x480C5C); //quickswap weapon with L part 1 (CMD 0xF3 for ID 0x2D)
+		PatchByte(relentry1+0x480C7B, 0xF1); //stop sfx when quickswapping with L to prevent issues
+		PatchNOP(relentry1+0x480C88); //quickswap weapon with L part 2 (CMD 0xF2 for ID 0x29)
+		PatchNOP(relentry1+0x480F68); //quickswap weapon with R part 1 (CMD 0xF3 for ID 0x2D)
+		PatchByte(relentry1+0x480F87, 0xF1); //stop sfx when quickswapping with R to prevent issues
+		PatchNOP(relentry1+0x480F94); //quickswap weapon with R part 2 (CMD 0xF2 for ID 0x29)
+		//while they nearly got all those quickswap features right, pressing the c-stick left forgets to stop sound...
+		PatchB(_mm6_cleft_stopsfx, relentry1+0x4808B4); //replace jump from original branch to jump to our function
+		_mm6_cleft_ret_addr = relentry1+0x4808C4; //save original branch location to jump back to after our function
 		//one missing thing that I dont know if it is even restorable is the get weapon sound
 		//a letter makes, that one seems to be completely absent from this version, no calls are made...
 	}
