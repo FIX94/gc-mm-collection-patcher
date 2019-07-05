@@ -10,6 +10,10 @@
 
 #include "common.h"
 
+//calculated using hzconv.py
+#define ADD_VAL_32K 5632
+#define TOTAL_VAL_32K 39375
+//shortest possible AX buffer
 #define BUF_32K_SMPL 0xA0
 #define BUF_32K_BYTES (BUF_32K_SMPL<<1)
 

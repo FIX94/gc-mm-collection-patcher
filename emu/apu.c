@@ -69,10 +69,8 @@ static struct {
 
 	bool mode_change;
 	bool new_mode5;
-	uint8_t vrc7Clock;
+	//uint8_t vrc7Clock;
 	uint8_t apuClock;
-	uint8_t apuClock2;
-	uint8_t apuClock3;
 	uint8_t p1Out;
 	uint8_t p2Out;
 	uint8_t triOut;
@@ -83,7 +81,9 @@ static struct {
 	const uint8_t *lengthLookupTbl;
 	const uint8_t *triSeq;
 
-	bool waitForRefill;
+	//bool waitForRefill;
+	//gc specific
+	uint16_t apuClock2;
 } apu;
 
 static int16_t _buf32k[BUF_32K_SMPL] __attribute__((aligned(32)));
@@ -214,10 +214,10 @@ void apuInit()
 	apu.enable_irq = true;
 	apu.mode_change = false;
 	apu.new_mode5 = false;
-	apu.vrc7Clock = 1;
+	//apu.vrc7Clock = 1;
 	apu.apuClock = 0;
-	apu.apuClock2 = 0;
-	apu.apuClock3 = 0;
+	//gc specific
+	apu.apuClock2 = ADD_VAL_32K;
 
 	apu.mode5 = false;
 	apu.modePos = 5;
@@ -407,27 +407,17 @@ FIXNES_ALWAYSINLINE void apuCycle()
 		apu.lastHPOut = curOut; //Save Highpass Output
 		//Save Clipped Highpass Output
 		//apu.outBuf[apu.curBufPos] = (curOut > 32767)?(32767):((curOut < -32768)?(-32768):curOut);
+		//instead of saving HP value directly to buffer, use this gamecube
+		//specific routine to archive 32kHz using nearest resample, see hzconv.py
+		if(apu.apuClock2 >= TOTAL_VAL_32K)
+		{
+			apu.apuClock2 -= TOTAL_VAL_32K;
+			//Save Clipped Highpass Output
+			_buf32k[apu.curBufPos++] = (curOut > 32767)?(32767):((curOut < -32768)?(-32768):curOut);
+		}
+		apu.apuClock2 += ADD_VAL_32K;
 	}
 	apu.apuClock++;
-
-	//only save at 32001Hz using nearest resample
-	if(apu.apuClock2 == 56)
-	{
-		if(apu.apuClock3 == 13)
-		{
-			apu.apuClock2 = 1; //so 55 cycles for next data block
-			apu.apuClock3 = 0;
-		}
-		else
-		{
-			apu.apuClock2 = 0;
-			apu.apuClock3++;
-		}
-		//Save Clipped Highpass Output
-		_buf32k[apu.curBufPos] = (apu.lastHPOut > 32767)?(32767):((apu.lastHPOut < -32768)?(-32768):apu.lastHPOut);
-		apu.curBufPos++;
-	}
-	apu.apuClock2++;
 
 	if(apu.p1freqCtr == 0)
 	{
