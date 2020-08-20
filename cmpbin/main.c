@@ -8,6 +8,8 @@
 #include <malloc.h>
 #include <lzma.h>
 #include <stdbool.h>
+#include <string.h>
+#include <errno.h>
 
 static bool init_encoder(lzma_stream *strm)
 {
